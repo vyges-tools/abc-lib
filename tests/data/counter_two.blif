@@ -1,0 +1,18 @@
+# counter_safe (from 0 with an enable, back to 0 after 2) with two properties: `never` (the count
+# is 3, which it cannot reach) and `bad` (the count is 2, first after two enabled cycles: frame 2).
+.model counter_two
+.inputs en
+.outputs never bad
+.latch n0 q0 0
+.latch n1 q1 0
+.names en q0 q1 n0
+100 1
+010 1
+.names en q0 q1 n1
+110 1
+0-1 1
+.names q0 q1 never
+11 1
+.names q0 q1 bad
+01 1
+.end

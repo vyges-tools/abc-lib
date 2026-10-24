@@ -169,3 +169,35 @@ fn dsec_decides_but_leaves_no_counterexample() {
     assert_eq!(abc.prob_status(), ProbStatus::Sat);
     assert!(abc.cex().is_none());
 }
+
+/// Property checking on several outputs at once: `pdr` names the first output it disproves and its
+/// frame, and does not blame an output that holds. counter_two's `never` (output 0) cannot rise;
+/// `bad` (output 1) rises after two enabled cycles.
+#[test]
+fn pdr_names_the_failing_property_among_several() {
+    let mut abc = Abc::start().unwrap();
+    abc.execute(&format!("read_blif {}", data("counter_two.blif"))).unwrap();
+    abc.execute("strash; pdr").unwrap();
+    assert_eq!(abc.prob_status(), ProbStatus::Sat);
+    assert_eq!(abc.cex().map(|c| (c.po, c.frame)), Some((1, 2)));
+    for frame in 0..2 {
+        assert_eq!(abc.cex_inputs(frame), Some(vec![true]), "frame {frame}");
+    }
+}
+
+/// ⛔ `bmc3 -F N` checks frames 0 to N-1: the failure in frame 2 is out of reach of `-F 2` (no
+/// verdict) and found by `-F 3`. A bound of N cycles is `-F N+1`.
+#[test]
+fn bmc3_frame_bound_excludes_frame_f() {
+    {
+        let mut abc = Abc::start().unwrap();
+        abc.execute(&format!("read_blif {}", data("counter_two.blif"))).unwrap();
+        abc.execute("strash; bmc3 -F 2").unwrap();
+        assert_eq!(abc.prob_status(), ProbStatus::Undecided);
+    }
+    let mut abc = Abc::start().unwrap();
+    abc.execute(&format!("read_blif {}", data("counter_two.blif"))).unwrap();
+    abc.execute("strash; bmc3 -F 3").unwrap();
+    assert_eq!(abc.prob_status(), ProbStatus::Sat);
+    assert_eq!(abc.cex().map(|c| (c.po, c.frame)), Some((1, 2)));
+}
