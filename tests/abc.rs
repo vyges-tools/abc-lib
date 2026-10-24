@@ -25,6 +25,23 @@ fn an_unknown_command_is_an_error() {
     }
 }
 
+/// A captured command returns what it printed, and only that: each call starts a fresh capture.
+#[test]
+fn execute_captured_returns_the_commands_own_output() {
+    let mut abc = Abc::start().unwrap();
+    abc.execute(&format!("read_blif {}", data("counter.blif"))).unwrap();
+    let stats = abc.execute_captured("print_stats").unwrap();
+    assert!(stats.contains("lat =    2"), "{stats:?}");
+    abc.execute("strash").unwrap();
+    let verdict = abc.execute_captured("bmc3 -F 10").unwrap();
+    assert!(verdict.contains("asserted in frame 3"), "{verdict:?}");
+    assert!(!verdict.contains("lat ="), "the first capture leaked into the second: {verdict:?}");
+    match abc.execute_captured("no_such_command") {
+        Err(Error::Command { code, .. }) => assert_ne!(code, 0),
+        other => panic!("{other:?}"),
+    }
+}
+
 /// Two XORs written differently are equivalent: the miter is unsatisfiable.
 #[test]
 fn equivalent_netlists_prove_unsat() {

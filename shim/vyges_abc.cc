@@ -9,6 +9,10 @@
 #include "base/cmd/cmd.h"
 #include "misc/util/utilCex.h"
 
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <cstdio>
 #include <cstring>
 
 int vyges_abc_start(void) {
@@ -33,6 +37,28 @@ int vyges_abc_execute(const char* command) {
   } catch (...) {
     return -1;
   }
+}
+
+int vyges_abc_execute_captured(const char* command, const char* path) {
+  std::fflush(stdout);
+  const int saved = dup(STDOUT_FILENO);
+  if (saved < 0) {
+    return -2;
+  }
+  const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+  if (fd < 0 || dup2(fd, STDOUT_FILENO) < 0) {
+    if (fd >= 0) {
+      close(fd);
+    }
+    close(saved);
+    return -2;
+  }
+  close(fd);
+  const int code = vyges_abc_execute(command);
+  std::fflush(stdout);
+  dup2(saved, STDOUT_FILENO);
+  close(saved);
+  return code;
 }
 
 int vyges_abc_prob_status(void) {

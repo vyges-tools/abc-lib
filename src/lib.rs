@@ -21,6 +21,7 @@ mod ffi {
         pub fn vyges_abc_start() -> i32;
         pub fn vyges_abc_stop();
         pub fn vyges_abc_execute(command: *const c_char) -> i32;
+        pub fn vyges_abc_execute_captured(command: *const c_char, path: *const c_char) -> i32;
         pub fn vyges_abc_prob_status() -> i32;
         pub fn vyges_abc_cex(po: *mut i32, frame: *mut i32) -> i32;
         pub fn vyges_abc_cex_inputs(frame: i32, bits: *mut i32, len: i32) -> i32;
@@ -38,8 +39,11 @@ pub enum Error {
     Start,
     /// The command contains a NUL byte and cannot be passed to ABC.
     Nul(String),
-    /// ABC's interpreter returned non-zero for the command (or the call threw: -1).
-    Command { command: String, code: i32 },
+    /// ABC's interpreter returned non-zero for the command (or the call threw: -1). `output` is
+    /// what it printed, from [`Abc::execute_captured`] (empty from [`Abc::execute`]).
+    Command { command: String, code: i32, output: String },
+    /// [`Abc::execute_captured`] could not redirect standard output to, or read back, its file.
+    Capture(String),
 }
 
 impl std::fmt::Display for Error {
@@ -47,7 +51,8 @@ impl std::fmt::Display for Error {
         match self {
             Error::Start => write!(f, "ABC did not start"),
             Error::Nul(c) => write!(f, "command contains a NUL byte: {c:?}"),
-            Error::Command { command, code } => write!(f, "ABC command `{command}` returned {code}"),
+            Error::Command { command, code, .. } => write!(f, "ABC command `{command}` returned {code}"),
+            Error::Capture(e) => write!(f, "capturing ABC's output: {e}"),
         }
     }
 }
@@ -119,7 +124,33 @@ impl Abc {
         if code == 0 {
             Ok(())
         } else {
-            Err(Error::Command { command: command.to_string(), code })
+            Err(Error::Command { command: command.to_string(), code, output: String::new() })
+        }
+    }
+
+    /// [`Abc::execute`], returning what the command printed instead of letting it reach standard
+    /// output. ⚠️ Standard output is redirected PROCESS-WIDE for the call: anything another thread
+    /// prints meanwhile lands in the capture. This thread's buffered output is flushed first.
+    pub fn execute_captured(&mut self, command: &str) -> Result<String, Error> {
+        use std::io::Write;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let c = CString::new(command).map_err(|_| Error::Nul(command.to_string()))?;
+        let path = std::env::temp_dir()
+            .join(format!("vyges-abc-{}-{}.out", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+        let p = CString::new(path.to_string_lossy().into_owned()).map_err(|_| Error::Capture("temp path".into()))?;
+        let _ = std::io::stdout().flush();
+        let code = unsafe { ffi::vyges_abc_execute_captured(c.as_ptr(), p.as_ptr()) };
+        if code == -2 {
+            return Err(Error::Capture(format!("cannot redirect standard output to {}", path.display())));
+        }
+        let output = std::fs::read(&path).map(|b| String::from_utf8_lossy(&b).into_owned());
+        let _ = std::fs::remove_file(&path);
+        let output = output.map_err(|e| Error::Capture(format!("{}: {e}", path.display())))?;
+        if code == 0 {
+            Ok(output)
+        } else {
+            Err(Error::Command { command: command.to_string(), code, output })
         }
     }
 

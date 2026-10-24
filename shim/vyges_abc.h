@@ -23,6 +23,12 @@ void vyges_abc_stop(void);
 // it threw. The command's own output goes to stdout, as ABC prints it.
 int vyges_abc_execute(const char* command);
 
+// vyges_abc_execute with the process's standard output (file descriptor 1) redirected to the file
+// `path` (created or truncated) for the duration of the command, then restored. ABC prints its
+// results and verdicts to standard output; this keeps them out of the caller's own output.
+// Returns as vyges_abc_execute, or -2 if the redirection could not be set up.
+int vyges_abc_execute_captured(const char* command, const char* path);
+
 // Abc_FrameReadProbStatus: -1 undecided, 0 satisfiable (property fails / not equivalent; a
 // counterexample may be present), 1 unsatisfiable (property holds / equivalent).
 int vyges_abc_prob_status(void);

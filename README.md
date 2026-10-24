@@ -28,7 +28,7 @@ assert_eq!(abc.prob_status(), ProbStatus::Unsat);  // equivalent
 - `network_counts` reads the size of the current network.
 
 ABC keeps one frame per process, so a session holds a process-wide lock; a second session waits.
-Commands print to stdout, as ABC prints them.
+Commands print to stdout, as ABC prints them; `execute_captured` returns that output instead.
 
 ⚠️ `&cec -m` assumes a SINGLE-output miter: on a multi-output one (`miter -m`) it checks output 0
 only. Use `iprove` on a multi-output miter, which names the first output it disproves.
