@@ -1,0 +1,20 @@
+# A 2-bit counter from 0 with an enable: y0 is its low bit (seq_one's y0), y1 is low bit AND NOT
+# high bit, which equals the low bit until the count reaches 3: the designs first differ at y1 in
+# frame 3, after three enabled cycles.
+.model seq_late
+.inputs en
+.outputs y0 y1
+.latch n0 q0 0
+.latch n1 q1 0
+.names en q0 n0
+10 1
+01 1
+.names en q0 q1 n1
+0-1 1
+101 1
+110 1
+.names q0 y0
+1 1
+.names q0 q1 y1
+10 1
+.end

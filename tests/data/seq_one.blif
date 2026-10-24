@@ -1,0 +1,13 @@
+# One register toggled by `en`, from 0: both outputs are the register.
+.model seq_one
+.inputs en
+.outputs y0 y1
+.latch n q 0
+.names en q n
+10 1
+01 1
+.names q y0
+1 1
+.names q y1
+1 1
+.end

@@ -1,0 +1,18 @@
+# seq_one with its register duplicated: q1 and q2 toggle together, so q1 & q2 is q in every
+# reachable state. Equal to seq_one sequentially; NOT with the registers cut (q1 = 1, q2 = 0).
+.model seq_dup
+.inputs en
+.outputs y0 y1
+.latch n1 q1 0
+.latch n2 q2 0
+.names en q1 n1
+10 1
+01 1
+.names en q2 n2
+10 1
+01 1
+.names q1 q2 y0
+11 1
+.names q1 y1
+1 1
+.end

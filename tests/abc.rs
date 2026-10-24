@@ -127,3 +127,45 @@ fn cec_m_on_a_multi_output_miter_checks_output_0_only() {
     abc.execute("strash; &get -n; &cec -m").unwrap();
     assert_eq!(abc.prob_status(), ProbStatus::Unsat);
 }
+
+/// A SEQUENTIAL multi-output miter: `miter -m` on two designs with registers keeps them, and
+/// `dprove` proves the pair equal in every reachable state. seq_dup duplicates seq_one's register
+/// and ANDs the copies, which differs with the registers cut (q1 = 1, q2 = 0) but never in a state
+/// the two can reach from 0.
+#[test]
+fn dprove_proves_a_sequential_miter_that_a_register_cut_would_not() {
+    let mut abc = Abc::start().unwrap();
+    abc.execute(&format!("miter -m {} {}", data("seq_one.blif"), data("seq_dup.blif"))).unwrap();
+    abc.execute("strash; dprove").unwrap();
+    assert_eq!(abc.prob_status(), ProbStatus::Unsat);
+}
+
+/// `dprove` on a sequential multi-output miter names the output and the FRAME where the designs
+/// first differ, and the inputs of every frame up to it: seq_late's y1 leaves seq_one's after three
+/// enabled cycles (output 1, frame 3).
+#[test]
+fn dprove_names_the_output_and_frame_of_a_sequential_difference() {
+    let mut abc = Abc::start().unwrap();
+    abc.execute(&format!("miter -m {} {}", data("seq_one.blif"), data("seq_late.blif"))).unwrap();
+    abc.execute("strash; dprove").unwrap();
+    assert_eq!(abc.prob_status(), ProbStatus::Sat);
+    assert_eq!(abc.cex().map(|c| (c.po, c.frame)), Some((1, 3)));
+    for frame in 0..3 {
+        assert_eq!(abc.cex_inputs(frame), Some(vec![true]), "frame {frame}");
+    }
+}
+
+/// ⛔ `dsec` gives the verdict but leaves NO counterexample: a caller that must show where two
+/// designs differ builds the miter itself (`miter -m` + `dprove`, above).
+#[test]
+fn dsec_decides_but_leaves_no_counterexample() {
+    {
+        let mut abc = Abc::start().unwrap();
+        abc.execute(&format!("dsec {} {}", data("seq_one.blif"), data("seq_dup.blif"))).unwrap();
+        assert_eq!(abc.prob_status(), ProbStatus::Unsat);
+    }
+    let mut abc = Abc::start().unwrap();
+    abc.execute(&format!("dsec {} {}", data("seq_one.blif"), data("seq_late.blif"))).unwrap();
+    assert_eq!(abc.prob_status(), ProbStatus::Sat);
+    assert!(abc.cex().is_none());
+}
