@@ -1,0 +1,8 @@
+# y = a XOR b, as a sum of products
+.model xor_a
+.inputs a b
+.outputs y
+.names a b y
+10 1
+01 1
+.end

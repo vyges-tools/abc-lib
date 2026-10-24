@@ -1,0 +1,17 @@
+# A 2-bit counter from 0 with an enable. Output `bad` is 1 when the count is 3, which takes three
+# enabled cycles: a property that fails, first in frame 3.
+.model counter
+.inputs en
+.outputs bad
+.latch n0 q0 0
+.latch n1 q1 0
+.names en q0 n0
+10 1
+01 1
+.names en q0 q1 n1
+0-1 1
+101 1
+110 1
+.names q0 q1 bad
+11 1
+.end

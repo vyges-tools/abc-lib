@@ -1,0 +1,8 @@
+# y = a OR b: differs from XOR only at a = b = 1
+.model or
+.inputs a b
+.outputs y
+.names a b y
+1- 1
+-1 1
+.end

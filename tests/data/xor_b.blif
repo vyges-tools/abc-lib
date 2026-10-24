@@ -1,0 +1,12 @@
+# y = a XOR b, as (a OR b) AND NOT (a AND b)
+.model xor_b
+.inputs a b
+.outputs y
+.names a b o
+1- 1
+-1 1
+.names a b n
+11 1
+.names o n y
+10 1
+.end

@@ -1,0 +1,15 @@
+# The same counter, but it resets to 0 at 2: the count never reaches 3, so `bad` never rises.
+.model counter_safe
+.inputs en
+.outputs bad
+.latch n0 q0 0
+.latch n1 q1 0
+.names en q0 q1 n0
+100 1
+010 1
+.names en q0 q1 n1
+110 1
+0-1 1
+.names q0 q1 bad
+11 1
+.end
