@@ -62,6 +62,12 @@ fn bmc3_finds_the_shortest_counterexample() {
     abc.execute("strash; bmc3 -F 10").unwrap();
     assert_eq!(abc.prob_status(), ProbStatus::Sat);
     assert_eq!(abc.cex().map(|c| (c.po, c.frame)), Some((0, 3)));
+    // Reaching 3 by frame 3 needs `en` in each of frames 0, 1 and 2 (bits are laid out after the
+    // initial register values, one block of inputs per frame).
+    for frame in 0..3 {
+        assert_eq!(abc.cex_inputs(frame), Some(vec![true]), "frame {frame}");
+    }
+    assert_eq!(abc.cex_inputs(4), None);
 }
 
 /// The frame is reset between sessions: a new session has no network and no verdict.
@@ -75,4 +81,32 @@ fn a_new_session_starts_empty() {
     assert_eq!(abc.network_counts(), None);
     assert_eq!(abc.prob_status(), ProbStatus::Undecided);
     assert!(abc.cex().is_none());
+}
+
+/// `miter -m` keeps one output per output pair, in the first file's output order; `iprove` stops at
+/// the first output it disproves and leaves that output's number and the inputs that show it.
+/// two_a and two_b differ only in y1 (output 1), at a = b = 1.
+#[test]
+fn iprove_names_the_failing_output_of_a_multi_output_miter() {
+    let mut abc = Abc::start().unwrap();
+    abc.execute(&format!("miter -m {} {}", data("two_a.blif"), data("two_b.blif"))).unwrap();
+    abc.execute("strash; iprove").unwrap();
+    assert_eq!(abc.prob_status(), ProbStatus::Sat);
+    assert_eq!(abc.cex().map(|c| (c.po, c.frame)), Some((1, 0)));
+    assert_eq!((abc.pi_name(0).as_deref(), abc.pi_name(1).as_deref()), (Some("a"), Some("b")));
+    assert_eq!(abc.pi_name(2), None);
+    assert_eq!(abc.cex_inputs(0), Some(vec![true, true]));
+    assert_eq!(abc.cex_inputs(1), None, "a combinational counterexample has one frame");
+}
+
+/// ⛔ `&cec -m` ASSUMES A SINGLE-OUTPUT MITER ("Assuming the current network is a single-output
+/// miter"). Given the multi-output miter above it checks output 0 only, which agrees, and reports
+/// the two designs EQUIVALENT although y1 differs. Pinned so a caller never builds on it: use
+/// `iprove` on a multi-output miter, or `&cec -m` only after a plain (single-output) `miter`.
+#[test]
+fn cec_m_on_a_multi_output_miter_checks_output_0_only() {
+    let mut abc = Abc::start().unwrap();
+    abc.execute(&format!("miter -m {} {}", data("two_a.blif"), data("two_b.blif"))).unwrap();
+    abc.execute("strash; &get -n; &cec -m").unwrap();
+    assert_eq!(abc.prob_status(), ProbStatus::Unsat);
 }

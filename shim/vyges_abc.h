@@ -31,9 +31,19 @@ int vyges_abc_prob_status(void);
 // *po / *frame are set to its failing output and time frame, 0 if there is none.
 int vyges_abc_cex(int* po, int* frame);
 
+// The primary-input values of the last counterexample in time frame `frame` (0-based), in the
+// order of the counterexample's primary inputs: writes min(len, nPis) values (0 or 1) into `bits`
+// and returns nPis, or -1 if there is no counterexample or `frame` is outside it.
+int vyges_abc_cex_inputs(int frame, int* bits, int len);
+
 // The current logic network's counts: primary inputs, primary outputs, latches, internal nodes.
 // 1 on success, 0 if there is no current network.
 int vyges_abc_network_counts(int* pis, int* pos, int* latches, int* nodes);
+
+// The name of the current network's primary input (kind 0) or primary output (kind 1) number
+// `index`: copies it NUL-terminated into `buf` (truncated to len - 1 bytes) and returns its full
+// length, or -1 if there is no network or no such signal.
+int vyges_abc_network_name(int kind, int index, char* buf, int len);
 
 #ifdef __cplusplus
 }

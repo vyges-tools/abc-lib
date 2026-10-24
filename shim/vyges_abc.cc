@@ -9,6 +9,8 @@
 #include "base/cmd/cmd.h"
 #include "misc/util/utilCex.h"
 
+#include <cstring>
+
 int vyges_abc_start(void) {
   try {
     abc::Abc_Start();
@@ -55,6 +57,22 @@ int vyges_abc_cex(int* po, int* frame) {
   }
 }
 
+int vyges_abc_cex_inputs(int frame, int* bits, int len) {
+  try {
+    auto* cex = static_cast<abc::Abc_Cex_t*>(abc::Abc_FrameReadCex(abc::Abc_FrameGetGlobalFrame()));
+    if (cex == nullptr || frame < 0 || frame > cex->iFrame) {
+      return -1;
+    }
+    // Bit layout: the initial register values (nRegs), then nPis inputs per frame.
+    for (int i = 0; i < cex->nPis && i < len; i++) {
+      bits[i] = abc::Abc_InfoHasBit(cex->pData, cex->nRegs + frame * cex->nPis + i) ? 1 : 0;
+    }
+    return cex->nPis;
+  } catch (...) {
+    return -1;
+  }
+}
+
 int vyges_abc_network_counts(int* pis, int* pos, int* latches, int* nodes) {
   try {
     abc::Abc_Ntk_t* ntk = abc::Abc_FrameReadNtk(abc::Abc_FrameGetGlobalFrame());
@@ -68,5 +86,30 @@ int vyges_abc_network_counts(int* pis, int* pos, int* latches, int* nodes) {
     return 1;
   } catch (...) {
     return 0;
+  }
+}
+
+int vyges_abc_network_name(int kind, int index, char* buf, int len) {
+  try {
+    abc::Abc_Ntk_t* ntk = abc::Abc_FrameReadNtk(abc::Abc_FrameGetGlobalFrame());
+    if (ntk == nullptr || index < 0 || len <= 0) {
+      return -1;
+    }
+    abc::Abc_Obj_t* obj;
+    if (kind == 0 && index < abc::Abc_NtkPiNum(ntk)) {
+      obj = abc::Abc_NtkPi(ntk, index);
+    } else if (kind == 1 && index < abc::Abc_NtkPoNum(ntk)) {
+      obj = abc::Abc_NtkPo(ntk, index);
+    } else {
+      return -1;
+    }
+    const char* name = abc::Abc_ObjName(obj);
+    const int n = static_cast<int>(std::strlen(name));
+    const int k = n < len - 1 ? n : len - 1;
+    std::memcpy(buf, name, k);
+    buf[k] = '\0';
+    return n;
+  } catch (...) {
+    return -1;
   }
 }

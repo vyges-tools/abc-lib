@@ -1,0 +1,10 @@
+# y0 = a AND b, y1 = a XOR b
+.model two_a
+.inputs a b
+.outputs y0 y1
+.names a b y0
+11 1
+.names a b y1
+10 1
+01 1
+.end

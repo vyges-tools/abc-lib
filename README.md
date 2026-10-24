@@ -23,11 +23,15 @@ assert_eq!(abc.prob_status(), ProbStatus::Unsat);  // equivalent
 - `execute` runs one command line through ABC's own interpreter (`Cmd_CommandExecute`), so every
   ABC command is available: synthesis (`strash`, `dc2`, `&if`, `map`, ...), equivalence (`cec`,
   `&cec`, `dsec`), and property checking (`pdr`, `bmc3`, `int`, `dprove`).
-- `prob_status` and `cex` read the verdict and counterexample the last proof command left.
+- `prob_status`, `cex` and `cex_inputs` read the verdict, the failing output and frame, and the
+  input values the last proof command left; `pi_name` / `po_name` name the current network's signals.
 - `network_counts` reads the size of the current network.
 
 ABC keeps one frame per process, so a session holds a process-wide lock; a second session waits.
 Commands print to stdout, as ABC prints them.
+
+⚠️ `&cec -m` assumes a SINGLE-output miter: on a multi-output one (`miter -m`) it checks output 0
+only. Use `iprove` on a multi-output miter, which names the first output it disproves.
 
 ## Pin
 

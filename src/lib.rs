@@ -23,7 +23,9 @@ mod ffi {
         pub fn vyges_abc_execute(command: *const c_char) -> i32;
         pub fn vyges_abc_prob_status() -> i32;
         pub fn vyges_abc_cex(po: *mut i32, frame: *mut i32) -> i32;
+        pub fn vyges_abc_cex_inputs(frame: i32, bits: *mut i32, len: i32) -> i32;
         pub fn vyges_abc_network_counts(pis: *mut i32, pos: *mut i32, latches: *mut i32, nodes: *mut i32) -> i32;
+        pub fn vyges_abc_network_name(kind: i32, index: i32, buf: *mut c_char, len: i32) -> i32;
     }
 }
 
@@ -132,12 +134,48 @@ impl Abc {
         (unsafe { ffi::vyges_abc_cex(&mut po, &mut frame) } == 1).then_some(Cex { po, frame })
     }
 
+    /// The last counterexample's primary-input values in time `frame` (0-based), in the order of
+    /// its primary inputs; `None` if there is no counterexample or the frame is outside it.
+    pub fn cex_inputs(&self, frame: i32) -> Option<Vec<bool>> {
+        let n = unsafe { ffi::vyges_abc_cex_inputs(frame, std::ptr::null_mut(), 0) };
+        if n < 0 {
+            return None;
+        }
+        let mut bits = vec![0i32; n as usize];
+        unsafe { ffi::vyges_abc_cex_inputs(frame, bits.as_mut_ptr(), n) };
+        Some(bits.into_iter().map(|b| b != 0).collect())
+    }
+
     /// Counts of the current network (`Abc_FrameReadNtk`), if there is one.
     pub fn network_counts(&self) -> Option<NetworkCounts> {
         let (mut pis, mut pos, mut latches, mut nodes) = (0, 0, 0, 0);
         let ok = unsafe { ffi::vyges_abc_network_counts(&mut pis, &mut pos, &mut latches, &mut nodes) } == 1;
         ok.then_some(NetworkCounts { pis, pos, latches, nodes })
     }
+
+    /// The name of the current network's primary input `index` (`Abc_ObjName(Abc_NtkPi(..))`).
+    pub fn pi_name(&self, index: i32) -> Option<String> {
+        name(0, index)
+    }
+
+    /// The name of the current network's primary output `index` (`Abc_ObjName(Abc_NtkPo(..))`).
+    pub fn po_name(&self, index: i32) -> Option<String> {
+        name(1, index)
+    }
+}
+
+fn name(kind: i32, index: i32) -> Option<String> {
+    let mut buf = vec![0u8; 256];
+    let n = unsafe { ffi::vyges_abc_network_name(kind, index, buf.as_mut_ptr() as *mut c_char, buf.len() as i32) };
+    if n < 0 {
+        return None;
+    }
+    if n as usize >= buf.len() {
+        buf = vec![0u8; n as usize + 1];
+        unsafe { ffi::vyges_abc_network_name(kind, index, buf.as_mut_ptr() as *mut c_char, buf.len() as i32) };
+    }
+    buf.truncate(n as usize);
+    Some(String::from_utf8_lossy(&buf).into_owned())
 }
 
 impl Drop for Abc {
