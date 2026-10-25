@@ -185,6 +185,58 @@ int vyges_abc_obj_fanout_count(void* ntk, int obj);
 int vyges_abc_obj_fanout(void* ntk, int obj, int k);
 int vyges_abc_obj_gate(void* ntk, int obj);
 
+// ---- GIA: an AIG manager built from a network, rewritten in place, and a network back ----------
+
+// From a logic network: strashed (Abc_NtkStrash(ntk, 0, 1, 0)), to an AIG (Abc_NtkToDar), to GIA,
+// its latches' initial values made zero (Gia_ManDupZeroUndc), the network's CI and CO names kept.
+void* vyges_abc_gia_from_network(void* ntk);
+void vyges_abc_gia_free(void* gia);
+// The manager after a rewrite returned `next`: `gia` itself when `next` is it (or NULL); else
+// `next`, which takes over each name vector it lacks, and `gia` is freed.
+void* vyges_abc_gia_replace(void* gia, void* next);
+// 0 choices computed (pReprs), 1 a LUT mapping, 2 a cell mapping, 3 MUXes, 4 dangling nodes.
+int vyges_abc_gia_query(void* gia, int which);
+
+// One rewrite each: the new manager (or `gia` itself), NULL on failure. `bt_limit` < 0 keeps
+// Dch_ManSetDefaultParams' value.
+void* vyges_abc_gia_rehash(void* gia, int add_strash);
+void* vyges_abc_gia_dch(void* gia, int bt_limit);
+void* vyges_abc_gia_equiv_reduce(void* gia, int use_all, int dual_out, int skip_phase, int verbose);
+void* vyges_abc_gia_syn2(void* gia, int old_algo, int coarsen, int cut_min, int relax_ratio,
+                         int delay_min, int verbose, int very_verbose);
+void* vyges_abc_gia_syn3(void* gia, int verbose, int very_verbose);
+void* vyges_abc_gia_syn4(void* gia, int verbose, int very_verbose);
+void* vyges_abc_gia_retime_forward(void* gia, int max_iters, int verbose);
+void* vyges_abc_gia_compress2(void* gia, int update_level, int verbose);
+void* vyges_abc_gia_area_balance(void* gia, int simple_and, int new_nodes_max, int verbose,
+                                 int very_verbose);
+void* vyges_abc_gia_balance(void* gia, int simple_and, int strict, int verbose);
+void* vyges_abc_gia_equiv_reduce_and_remap(void* gia, int seq, int miter_pairs);
+// Gia_ManPerformMapping over Gia_ManSetIfParsDefault with these fields set.
+void* vyges_abc_gia_if_map(void* gia, int delay_opt, int lut_size, int truth, int cut_min, int exp_red);
+void* vyges_abc_gia_synch2(void* gia, int bt_limit, int lut_size, int relax_ratio);
+
+// A network from the manager: by its cell mapping, by its LUT mapping, or as a plain AIG
+// (Gia_ManToAig then Abc_NtkFromAigPhase, the AIG's name kept). NULL on failure.
+void* vyges_abc_ntk_from_cell_mapped_gia(void* gia, int use_buffs);
+void* vyges_abc_ntk_from_mapped_gia(void* gia, int find_enables, int use_buffs);
+void* vyges_abc_ntk_from_gia_aig(void* gia);
+// Each CI and CO renamed after the manager's name vectors, in order: 0, or -1.
+int vyges_abc_ntk_name_from_gia(void* ntk, void* gia);
+int vyges_abc_ntk_redirect_ci_co(void* ntk);
+int vyges_abc_ntk_is_strash(void* ntk);
+void vyges_abc_getopt_reset(void);
+void* vyges_abc_ntk_dup_dfs(void* ntk);
+// Abc_SclUpsizePerform (`upsize` 1) or Abc_SclDnsizePerform over a zeroed SC_SizePars with these.
+int vyges_abc_scl_resize(void* lib, void* ntk, int upsize, int iters, int iter_no_change, int window,
+                         int ratio, int notches, int use_dept);
+// Abc_FrameSetLibGen alone; a network's pManFunc set to a gate library.
+int vyges_abc_frame_set_lib_gen(void* mio);
+void vyges_abc_ntk_set_man_func(void* ntk, void* mio);
+// stdout to /dev/null (flushed first): the saved descriptor to restore, or -1.
+int vyges_abc_stdout_suppress(void);
+void vyges_abc_stdout_restore(int saved);
+
 #ifdef __cplusplus
 }
 #endif

@@ -18,6 +18,12 @@
 // clang-format on
 #include "map/scl/sclLib.h"
 #include "map/scl/sclSize.h"
+#include "aig/aig/aig.h"
+#include "aig/gia/gia.h"
+#include "aig/gia/giaAig.h"
+#include "map/if/if.h"
+#include "misc/extra/extra.h"
+#include "proof/dch/dch.h"
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -28,6 +34,14 @@
 #include <vector>
 
 namespace abc {
+extern Abc_Ntk_t* Abc_NtkFromAigPhase(Aig_Man_t* pMan);
+extern Abc_Ntk_t* Abc_NtkFromCellMappedGia(Gia_Man_t* p, int fUseBuffs);
+extern Abc_Ntk_t* Abc_NtkFromMappedGia(Gia_Man_t* p, int fFindEnables, int fUseBuffs);
+extern Aig_Man_t* Abc_NtkToDar(Abc_Ntk_t* pNtk, int fExors, int fRegisters);
+extern Gia_Man_t* Gia_ManAigSynch2(Gia_Man_t* p, void* pPars, int nLutSize, int nRelaxRatio);
+extern Vec_Ptr_t* Abc_NtkCollectCiNames(Abc_Ntk_t* pNtk);
+extern Vec_Ptr_t* Abc_NtkCollectCoNames(Abc_Ntk_t* pNtk);
+extern void Abc_NtkRedirectCiCo(Abc_Ntk_t* pNtk);
 // Defined in ABC without a header declaring them.
 Abc_Ntk_t* Abc_NtkMap(Abc_Ntk_t* pNtk, Mio_Library_t* userLib, double DelayTarget,
                       double AreaMulti, double DelayMulti, float LogFan, float Slew, float Gain,
@@ -768,4 +782,301 @@ int vyges_abc_obj_gate(void* ntk, int obj) {
     return -1;
   }
   return gate_index(static_cast<abc::Abc_Ntk_t*>(ntk)->pManFunc, static_cast<abc::Mio_Gate_t*>(abc::Abc_ObjData(o)));
+}
+
+// ---- GIA ----------------------------------------------------------------------------------------
+
+static abc::Gia_Man_t* gia_of(void* p) {
+  return static_cast<abc::Gia_Man_t*>(p);
+}
+
+void* vyges_abc_gia_from_network(void* ntk) {
+  try {
+    auto* n = static_cast<abc::Abc_Ntk_t*>(ntk);
+    abc::Abc_Ntk_t* strash = abc::Abc_NtkStrash(n, 0, 1, 0);
+    if (strash == nullptr) {
+      return nullptr;
+    }
+    abc::Aig_Man_t* aig = abc::Abc_NtkToDar(strash, 0, 0);
+    abc::Gia_Man_t* gia = aig ? abc::Gia_ManFromAig(aig) : nullptr;
+    if (gia != nullptr) {
+      char* inits = abc::Abc_NtkCollectLatchValuesStr(n);
+      abc::Gia_Man_t* zeroed = abc::Gia_ManDupZeroUndc(gia, inits, 0, 0, 0);
+      abc::Gia_ManStop(gia);
+      ABC_FREE(inits);
+      gia = zeroed;
+      gia->vNamesIn = abc::Abc_NtkCollectCiNames(n);
+      gia->vNamesOut = abc::Abc_NtkCollectCoNames(n);
+    }
+    if (aig != nullptr) {
+      abc::Aig_ManStop(aig);
+    }
+    abc::Abc_NtkDelete(strash);
+    return gia;
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+void vyges_abc_gia_free(void* gia) {
+  if (gia != nullptr) {
+    abc::Gia_ManStop(gia_of(gia));
+  }
+}
+
+void* vyges_abc_gia_replace(void* gia, void* next) {
+  auto* g = gia_of(gia);
+  auto* n = gia_of(next);
+  if (n == nullptr || g == n) {
+    return g;
+  }
+  if (g->vNamesIn && !n->vNamesIn) {
+    std::swap(g->vNamesIn, n->vNamesIn);
+  }
+  if (g->vNamesOut && !n->vNamesOut) {
+    std::swap(g->vNamesOut, n->vNamesOut);
+  }
+  if (g->vNamesNode && !n->vNamesNode) {
+    std::swap(g->vNamesNode, n->vNamesNode);
+  }
+  abc::Gia_ManStop(g);
+  return n;
+}
+
+int vyges_abc_gia_query(void* gia, int which) {
+  auto* g = gia_of(gia);
+  switch (which) {
+    case 0:
+      return g->pReprs != nullptr;
+    case 1:
+      return abc::Gia_ManHasMapping(g);
+    case 2:
+      return abc::Gia_ManHasCellMapping(g);
+    case 3:
+      return g->pMuxes != nullptr;
+    case 4:
+      return abc::Gia_ManHasDangling(g);
+    default:
+      return -1;
+  }
+}
+
+#define VYGES_GIA_CALL(expr) \
+  try {                      \
+    return (expr);           \
+  } catch (...) {            \
+    return nullptr;          \
+  }
+
+void* vyges_abc_gia_rehash(void* gia, int add_strash) {
+  VYGES_GIA_CALL(abc::Gia_ManRehash(gia_of(gia), add_strash))
+}
+
+static void dch_defaults(abc::Dch_Pars_t* pars, int bt_limit) {
+  std::memset(pars, 0, sizeof(*pars));
+  abc::Dch_ManSetDefaultParams(pars);
+  if (bt_limit >= 0) {
+    pars->nBTLimit = bt_limit;
+  }
+}
+
+void* vyges_abc_gia_dch(void* gia, int bt_limit) {
+  abc::Dch_Pars_t pars;
+  dch_defaults(&pars, bt_limit);
+  VYGES_GIA_CALL(abc::Gia_ManPerformDch(gia_of(gia), &pars))
+}
+
+void* vyges_abc_gia_equiv_reduce(void* gia, int use_all, int dual_out, int skip_phase, int verbose) {
+  VYGES_GIA_CALL(abc::Gia_ManEquivReduce(gia_of(gia), use_all, dual_out, skip_phase, verbose))
+}
+
+void* vyges_abc_gia_syn2(void* gia, int old_algo, int coarsen, int cut_min, int relax_ratio,
+                         int delay_min, int verbose, int very_verbose) {
+  VYGES_GIA_CALL(abc::Gia_ManAigSyn2(gia_of(gia), old_algo, coarsen, cut_min, relax_ratio, delay_min,
+                                     verbose, very_verbose))
+}
+
+void* vyges_abc_gia_syn3(void* gia, int verbose, int very_verbose) {
+  VYGES_GIA_CALL(abc::Gia_ManAigSyn3(gia_of(gia), verbose, very_verbose))
+}
+
+void* vyges_abc_gia_syn4(void* gia, int verbose, int very_verbose) {
+  VYGES_GIA_CALL(abc::Gia_ManAigSyn4(gia_of(gia), verbose, very_verbose))
+}
+
+void* vyges_abc_gia_retime_forward(void* gia, int max_iters, int verbose) {
+  VYGES_GIA_CALL(abc::Gia_ManRetimeForward(gia_of(gia), max_iters, verbose))
+}
+
+void* vyges_abc_gia_compress2(void* gia, int update_level, int verbose) {
+  VYGES_GIA_CALL(abc::Gia_ManCompress2(gia_of(gia), update_level, verbose))
+}
+
+void* vyges_abc_gia_area_balance(void* gia, int simple_and, int new_nodes_max, int verbose,
+                                 int very_verbose) {
+  VYGES_GIA_CALL(abc::Gia_ManAreaBalance(gia_of(gia), simple_and, new_nodes_max, verbose, very_verbose))
+}
+
+void* vyges_abc_gia_balance(void* gia, int simple_and, int strict, int verbose) {
+  VYGES_GIA_CALL(abc::Gia_ManBalance(gia_of(gia), simple_and, strict, verbose))
+}
+
+void* vyges_abc_gia_equiv_reduce_and_remap(void* gia, int seq, int miter_pairs) {
+  VYGES_GIA_CALL(abc::Gia_ManEquivReduceAndRemap(gia_of(gia), seq, miter_pairs))
+}
+
+void* vyges_abc_gia_if_map(void* gia, int delay_opt, int lut_size, int truth, int cut_min, int exp_red) {
+  abc::If_Par_t pars;
+  std::memset(&pars, 0, sizeof(pars));
+  abc::Gia_ManSetIfParsDefault(&pars);
+  pars.fDelayOpt = delay_opt;
+  pars.nLutSize = lut_size;
+  pars.fTruth = truth;
+  pars.fCutMin = cut_min;
+  pars.fExpRed = exp_red;
+  VYGES_GIA_CALL(abc::Gia_ManPerformMapping(gia_of(gia), &pars))
+}
+
+void* vyges_abc_gia_synch2(void* gia, int bt_limit, int lut_size, int relax_ratio) {
+  abc::Dch_Pars_t pars;
+  dch_defaults(&pars, bt_limit);
+  VYGES_GIA_CALL(abc::Gia_ManAigSynch2(gia_of(gia), &pars, lut_size, relax_ratio))
+}
+
+void* vyges_abc_ntk_from_cell_mapped_gia(void* gia, int use_buffs) {
+  VYGES_GIA_CALL(abc::Abc_NtkFromCellMappedGia(gia_of(gia), use_buffs))
+}
+
+void* vyges_abc_ntk_from_mapped_gia(void* gia, int find_enables, int use_buffs) {
+  VYGES_GIA_CALL(abc::Abc_NtkFromMappedGia(gia_of(gia), find_enables, use_buffs))
+}
+
+void* vyges_abc_ntk_from_gia_aig(void* gia) {
+  try {
+    abc::Aig_Man_t* aig = abc::Gia_ManToAig(gia_of(gia), 0);
+    if (aig == nullptr) {
+      return nullptr;
+    }
+    abc::Abc_Ntk_t* ntk = abc::Abc_NtkFromAigPhase(aig);
+    if (ntk != nullptr) {
+      ntk->pName = abc::Extra_UtilStrsav(aig->pName);
+    }
+    abc::Aig_ManStop(aig);
+    return ntk;
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+int vyges_abc_ntk_name_from_gia(void* ntk, void* gia) {
+  try {
+    auto* n = static_cast<abc::Abc_Ntk_t*>(ntk);
+    auto* g = gia_of(gia);
+    if (g->vNamesIn == nullptr || g->vNamesOut == nullptr) {
+      return -1;
+    }
+    for (int i = 0; i < abc::Abc_NtkCiNum(n); i++) {
+      if (i >= abc::Vec_PtrSize(g->vNamesIn)) {
+        return -1;
+      }
+      abc::Abc_Obj_t* obj = abc::Abc_NtkCi(n, i);
+      abc::Nm_ManDeleteIdName(n->pManName, obj->Id);
+      abc::Abc_ObjAssignName(obj, static_cast<char*>(abc::Vec_PtrEntry(g->vNamesIn, i)), nullptr);
+    }
+    for (int i = 0; i < abc::Abc_NtkCoNum(n); i++) {
+      if (i >= abc::Vec_PtrSize(g->vNamesOut)) {
+        return -1;
+      }
+      abc::Abc_Obj_t* obj = abc::Abc_NtkCo(n, i);
+      abc::Nm_ManDeleteIdName(n->pManName, obj->Id);
+      abc::Abc_ObjAssignName(obj, static_cast<char*>(abc::Vec_PtrEntry(g->vNamesOut, i)), nullptr);
+    }
+    return 0;
+  } catch (...) {
+    return -1;
+  }
+}
+
+int vyges_abc_ntk_redirect_ci_co(void* ntk) {
+  try {
+    abc::Abc_NtkRedirectCiCo(static_cast<abc::Abc_Ntk_t*>(ntk));
+    return 0;
+  } catch (...) {
+    return -1;
+  }
+}
+
+int vyges_abc_ntk_is_strash(void* ntk) {
+  return abc::Abc_NtkIsStrash(static_cast<abc::Abc_Ntk_t*>(ntk));
+}
+
+void vyges_abc_getopt_reset(void) {
+  abc::Extra_UtilGetoptReset();
+}
+
+void* vyges_abc_ntk_dup_dfs(void* ntk) {
+  VYGES_GIA_CALL(abc::Abc_NtkDupDfs(static_cast<abc::Abc_Ntk_t*>(ntk)))
+}
+
+int vyges_abc_scl_resize(void* lib, void* ntk, int upsize, int iters, int iter_no_change, int window,
+                         int ratio, int notches, int use_dept) {
+  try {
+    abc::SC_SizePars pars;
+    std::memset(&pars, 0, sizeof(pars));
+    pars.nIters = iters;
+    pars.nIterNoChange = iter_no_change;
+    pars.Window = window;
+    pars.Ratio = ratio;
+    pars.Notches = notches;
+    pars.fUseDept = use_dept;
+    auto* l = static_cast<abc::SC_Lib*>(lib);
+    auto* n = static_cast<abc::Abc_Ntk_t*>(ntk);
+    if (upsize) {
+      abc::Abc_SclUpsizePerform(l, n, &pars, nullptr);
+    } else {
+      abc::Abc_SclDnsizePerform(l, n, &pars, nullptr);
+    }
+    return 0;
+  } catch (...) {
+    return -1;
+  }
+}
+
+int vyges_abc_frame_set_lib_gen(void* mio) {
+  try {
+    abc::Abc_FrameSetLibGen(mio);
+    return 0;
+  } catch (...) {
+    return -1;
+  }
+}
+
+void vyges_abc_ntk_set_man_func(void* ntk, void* mio) {
+  static_cast<abc::Abc_Ntk_t*>(ntk)->pManFunc = mio;
+}
+
+int vyges_abc_stdout_suppress(void) {
+  std::fflush(stdout);
+  const int saved = dup(STDOUT_FILENO);
+  if (saved < 0) {
+    return -1;
+  }
+  const int null_fd = open("/dev/null", O_WRONLY);
+  if (null_fd < 0 || dup2(null_fd, STDOUT_FILENO) < 0) {
+    if (null_fd >= 0) {
+      close(null_fd);
+    }
+    close(saved);
+    return -1;
+  }
+  close(null_fd);
+  return saved;
+}
+
+void vyges_abc_stdout_restore(int saved) {
+  std::fflush(stdout);
+  if (saved >= 0) {
+    dup2(saved, STDOUT_FILENO);
+    close(saved);
+  }
 }

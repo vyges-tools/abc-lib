@@ -71,6 +71,36 @@ mod ffi {
         pub fn vyges_abc_obj_fanout_count(ntk: *mut c_void, obj: i32) -> i32;
         pub fn vyges_abc_obj_fanout(ntk: *mut c_void, obj: i32, k: i32) -> i32;
         pub fn vyges_abc_obj_gate(ntk: *mut c_void, obj: i32) -> i32;
+        pub fn vyges_abc_gia_from_network(ntk: *mut c_void) -> *mut c_void;
+        pub fn vyges_abc_gia_free(gia: *mut c_void);
+        pub fn vyges_abc_gia_replace(gia: *mut c_void, next: *mut c_void) -> *mut c_void;
+        pub fn vyges_abc_gia_query(gia: *mut c_void, which: i32) -> i32;
+        pub fn vyges_abc_gia_rehash(gia: *mut c_void, add_strash: i32) -> *mut c_void;
+        pub fn vyges_abc_gia_dch(gia: *mut c_void, bt_limit: i32) -> *mut c_void;
+        pub fn vyges_abc_gia_equiv_reduce(gia: *mut c_void, use_all: i32, dual_out: i32, skip_phase: i32, verbose: i32) -> *mut c_void;
+        pub fn vyges_abc_gia_syn2(gia: *mut c_void, old_algo: i32, coarsen: i32, cut_min: i32, relax_ratio: i32, delay_min: i32, verbose: i32, very_verbose: i32) -> *mut c_void;
+        pub fn vyges_abc_gia_syn3(gia: *mut c_void, verbose: i32, very_verbose: i32) -> *mut c_void;
+        pub fn vyges_abc_gia_syn4(gia: *mut c_void, verbose: i32, very_verbose: i32) -> *mut c_void;
+        pub fn vyges_abc_gia_retime_forward(gia: *mut c_void, max_iters: i32, verbose: i32) -> *mut c_void;
+        pub fn vyges_abc_gia_compress2(gia: *mut c_void, update_level: i32, verbose: i32) -> *mut c_void;
+        pub fn vyges_abc_gia_area_balance(gia: *mut c_void, simple_and: i32, new_nodes_max: i32, verbose: i32, very_verbose: i32) -> *mut c_void;
+        pub fn vyges_abc_gia_balance(gia: *mut c_void, simple_and: i32, strict: i32, verbose: i32) -> *mut c_void;
+        pub fn vyges_abc_gia_equiv_reduce_and_remap(gia: *mut c_void, seq: i32, miter_pairs: i32) -> *mut c_void;
+        pub fn vyges_abc_gia_if_map(gia: *mut c_void, delay_opt: i32, lut_size: i32, truth: i32, cut_min: i32, exp_red: i32) -> *mut c_void;
+        pub fn vyges_abc_gia_synch2(gia: *mut c_void, bt_limit: i32, lut_size: i32, relax_ratio: i32) -> *mut c_void;
+        pub fn vyges_abc_ntk_from_cell_mapped_gia(gia: *mut c_void, use_buffs: i32) -> *mut c_void;
+        pub fn vyges_abc_ntk_from_mapped_gia(gia: *mut c_void, find_enables: i32, use_buffs: i32) -> *mut c_void;
+        pub fn vyges_abc_ntk_from_gia_aig(gia: *mut c_void) -> *mut c_void;
+        pub fn vyges_abc_ntk_name_from_gia(ntk: *mut c_void, gia: *mut c_void) -> i32;
+        pub fn vyges_abc_ntk_redirect_ci_co(ntk: *mut c_void) -> i32;
+        pub fn vyges_abc_ntk_is_strash(ntk: *mut c_void) -> i32;
+        pub fn vyges_abc_getopt_reset();
+        pub fn vyges_abc_ntk_dup_dfs(ntk: *mut c_void) -> *mut c_void;
+        pub fn vyges_abc_scl_resize(lib: *mut c_void, ntk: *mut c_void, upsize: i32, iters: i32, iter_no_change: i32, window: i32, ratio: i32, notches: i32, use_dept: i32) -> i32;
+        pub fn vyges_abc_frame_set_lib_gen(mio: *mut c_void) -> i32;
+        pub fn vyges_abc_ntk_set_man_func(ntk: *mut c_void, mio: *mut c_void);
+        pub fn vyges_abc_stdout_suppress() -> i32;
+        pub fn vyges_abc_stdout_restore(saved: i32);
     }
 }
 
@@ -735,5 +765,242 @@ impl Network {
 impl Drop for Network {
     fn drop(&mut self) {
         unsafe { ffi::vyges_abc_ntk_delete(self.ptr) };
+    }
+}
+
+/// `Abc_SclUpsizePerform` / `Abc_SclDnsizePerform`'s parameters set (the rest zero).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SizeParams {
+    pub iters: i32,
+    pub iter_no_change: i32,
+    pub window: i32,
+    pub ratio: i32,
+    pub notches: i32,
+    pub use_dept: bool,
+}
+
+/// Up- or down-sizing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Resize {
+    Up,
+    Down,
+}
+
+impl Network {
+    /// `Abc_NtkIsStrash`.
+    pub fn is_strash(&self) -> bool {
+        unsafe { ffi::vyges_abc_ntk_is_strash(self.ptr) != 0 }
+    }
+
+    /// Sets the network's `pManFunc` to gate library `lib`.
+    pub fn set_gate_lib(&mut self, lib: GateLib) {
+        unsafe { ffi::vyges_abc_ntk_set_man_func(self.ptr, lib.ptr) };
+    }
+
+    /// `Abc_NtkDupDfs`.
+    pub fn dup_dfs(&self) -> Result<Network, Error> {
+        Self::wrap(unsafe { ffi::vyges_abc_ntk_dup_dfs(self.ptr) }, "Abc_NtkDupDfs")
+    }
+
+    /// Gate sizing in place over cell library `lib`.
+    pub fn resize(&mut self, lib: &CellLib, which: Resize, p: &SizeParams) -> Result<(), Error> {
+        let up = matches!(which, Resize::Up) as i32;
+        match unsafe { ffi::vyges_abc_scl_resize(lib.ptr, self.ptr, up, p.iters, p.iter_no_change, p.window, p.ratio, p.notches, p.use_dept as i32) } {
+            0 => Ok(()),
+            _ => Err(failed("Abc_SclUpsizePerform / Abc_SclDnsizePerform")),
+        }
+    }
+
+    /// `Abc_NtkFromCellMappedGia`.
+    pub fn from_cell_mapped_gia(gia: &Gia, use_buffs: bool) -> Result<Network, Error> {
+        Self::wrap(unsafe { ffi::vyges_abc_ntk_from_cell_mapped_gia(gia.ptr, use_buffs as i32) }, "Abc_NtkFromCellMappedGia")
+    }
+
+    /// `Abc_NtkFromMappedGia`.
+    pub fn from_mapped_gia(gia: &Gia, find_enables: bool, use_buffs: bool) -> Result<Network, Error> {
+        Self::wrap(unsafe { ffi::vyges_abc_ntk_from_mapped_gia(gia.ptr, find_enables as i32, use_buffs as i32) }, "Abc_NtkFromMappedGia")
+    }
+
+    /// `Gia_ManToAig(gia, 0)` then `Abc_NtkFromAigPhase`, the AIG's name kept.
+    pub fn from_gia_aig(gia: &Gia) -> Result<Network, Error> {
+        Self::wrap(unsafe { ffi::vyges_abc_ntk_from_gia_aig(gia.ptr) }, "Abc_NtkFromAigPhase")
+    }
+
+    /// Every CI and CO renamed after `gia`'s name vectors, in order.
+    pub fn name_from_gia(&mut self, gia: &Gia) -> Result<(), Error> {
+        match unsafe { ffi::vyges_abc_ntk_name_from_gia(self.ptr, gia.ptr) } {
+            0 => Ok(()),
+            _ => Err(failed("Abc_ObjAssignName from the GIA names")),
+        }
+    }
+
+    /// `Abc_NtkRedirectCiCo`.
+    pub fn redirect_ci_co(&mut self) -> Result<(), Error> {
+        match unsafe { ffi::vyges_abc_ntk_redirect_ci_co(self.ptr) } {
+            0 => Ok(()),
+            _ => Err(failed("Abc_NtkRedirectCiCo")),
+        }
+    }
+}
+
+/// An AIG manager (`Gia_Man_t`); every rewrite replaces it, the new one taking over the names it
+/// lacks. Freed on drop.
+pub struct Gia {
+    ptr: *mut c_void,
+}
+
+/// What a manager carries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GiaHas {
+    Choices,
+    Mapping,
+    CellMapping,
+    Muxes,
+    Dangling,
+}
+
+impl Gia {
+    /// From a logic network: strashed, through an AIG, latches zeroed, CI and CO names kept.
+    pub fn from_network(_abc: &Abc, ntk: &Network) -> Result<Gia, Error> {
+        let ptr = unsafe { ffi::vyges_abc_gia_from_network(ntk.ptr) };
+        if ptr.is_null() {
+            return Err(failed("Gia_ManFromAig"));
+        }
+        Ok(Gia { ptr })
+    }
+
+    pub fn has(&self, what: GiaHas) -> bool {
+        let w = match what {
+            GiaHas::Choices => 0,
+            GiaHas::Mapping => 1,
+            GiaHas::CellMapping => 2,
+            GiaHas::Muxes => 3,
+            GiaHas::Dangling => 4,
+        };
+        unsafe { ffi::vyges_abc_gia_query(self.ptr, w) > 0 }
+    }
+
+    fn replace(&mut self, next: *mut c_void, call: &str) -> Result<(), Error> {
+        if next.is_null() {
+            return Err(failed(call));
+        }
+        self.ptr = unsafe { ffi::vyges_abc_gia_replace(self.ptr, next) };
+        Ok(())
+    }
+
+    /// `Gia_ManRehash`.
+    pub fn rehash(&mut self, add_strash: bool) -> Result<(), Error> {
+        self.replace(unsafe { ffi::vyges_abc_gia_rehash(self.ptr, add_strash as i32) }, "Gia_ManRehash")
+    }
+
+    /// `Gia_ManPerformDch` over `Dch_ManSetDefaultParams`, `nBTLimit` overridden when given.
+    pub fn dch(&mut self, bt_limit: Option<i32>) -> Result<(), Error> {
+        self.replace(unsafe { ffi::vyges_abc_gia_dch(self.ptr, bt_limit.unwrap_or(-1)) }, "Gia_ManPerformDch")
+    }
+
+    /// `Gia_ManEquivReduce`.
+    pub fn equiv_reduce(&mut self, use_all: bool, dual_out: bool, skip_phase: bool, verbose: bool) -> Result<(), Error> {
+        self.replace(unsafe { ffi::vyges_abc_gia_equiv_reduce(self.ptr, use_all as i32, dual_out as i32, skip_phase as i32, verbose as i32) }, "Gia_ManEquivReduce")
+    }
+
+    /// `Gia_ManAigSyn2`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn syn2(&mut self, old_algo: bool, coarsen: bool, cut_min: bool, relax_ratio: i32, delay_min: bool, verbose: bool, very_verbose: bool) -> Result<(), Error> {
+        let next = unsafe { ffi::vyges_abc_gia_syn2(self.ptr, old_algo as i32, coarsen as i32, cut_min as i32, relax_ratio, delay_min as i32, verbose as i32, very_verbose as i32) };
+        self.replace(next, "Gia_ManAigSyn2")
+    }
+
+    /// `Gia_ManAigSyn3`.
+    pub fn syn3(&mut self, verbose: bool, very_verbose: bool) -> Result<(), Error> {
+        self.replace(unsafe { ffi::vyges_abc_gia_syn3(self.ptr, verbose as i32, very_verbose as i32) }, "Gia_ManAigSyn3")
+    }
+
+    /// `Gia_ManAigSyn4`.
+    pub fn syn4(&mut self, verbose: bool, very_verbose: bool) -> Result<(), Error> {
+        self.replace(unsafe { ffi::vyges_abc_gia_syn4(self.ptr, verbose as i32, very_verbose as i32) }, "Gia_ManAigSyn4")
+    }
+
+    /// `Gia_ManRetimeForward`.
+    pub fn retime_forward(&mut self, max_iters: i32, verbose: bool) -> Result<(), Error> {
+        self.replace(unsafe { ffi::vyges_abc_gia_retime_forward(self.ptr, max_iters, verbose as i32) }, "Gia_ManRetimeForward")
+    }
+
+    /// `Gia_ManCompress2`.
+    pub fn compress2(&mut self, update_level: bool, verbose: bool) -> Result<(), Error> {
+        self.replace(unsafe { ffi::vyges_abc_gia_compress2(self.ptr, update_level as i32, verbose as i32) }, "Gia_ManCompress2")
+    }
+
+    /// `Gia_ManAreaBalance`.
+    pub fn area_balance(&mut self, simple_and: bool, new_nodes_max: i32, verbose: bool, very_verbose: bool) -> Result<(), Error> {
+        self.replace(unsafe { ffi::vyges_abc_gia_area_balance(self.ptr, simple_and as i32, new_nodes_max, verbose as i32, very_verbose as i32) }, "Gia_ManAreaBalance")
+    }
+
+    /// `Gia_ManBalance`.
+    pub fn balance(&mut self, simple_and: bool, strict: bool, verbose: bool) -> Result<(), Error> {
+        self.replace(unsafe { ffi::vyges_abc_gia_balance(self.ptr, simple_and as i32, strict as i32, verbose as i32) }, "Gia_ManBalance")
+    }
+
+    /// `Gia_ManEquivReduceAndRemap`.
+    pub fn equiv_reduce_and_remap(&mut self, seq: bool, miter_pairs: bool) -> Result<(), Error> {
+        self.replace(unsafe { ffi::vyges_abc_gia_equiv_reduce_and_remap(self.ptr, seq as i32, miter_pairs as i32) }, "Gia_ManEquivReduceAndRemap")
+    }
+
+    /// `Gia_ManPerformMapping` over `Gia_ManSetIfParsDefault` with these fields.
+    pub fn if_map(&mut self, delay_opt: bool, lut_size: i32, truth: bool, cut_min: bool, exp_red: bool) -> Result<(), Error> {
+        let next = unsafe { ffi::vyges_abc_gia_if_map(self.ptr, delay_opt as i32, lut_size, truth as i32, cut_min as i32, exp_red as i32) };
+        self.replace(next, "Gia_ManPerformMapping")
+    }
+
+    /// `Gia_ManAigSynch2` over `Dch_ManSetDefaultParams` with `nBTLimit`.
+    pub fn synch2(&mut self, bt_limit: i32, lut_size: i32, relax_ratio: i32) -> Result<(), Error> {
+        self.replace(unsafe { ffi::vyges_abc_gia_synch2(self.ptr, bt_limit, lut_size, relax_ratio) }, "Gia_ManAigSynch2")
+    }
+}
+
+impl Drop for Gia {
+    fn drop(&mut self) {
+        unsafe { ffi::vyges_abc_gia_free(self.ptr) };
+    }
+}
+
+impl Abc {
+    /// `Abc_FrameSetLibGen` alone.
+    pub fn set_lib_gen(&mut self, lib: GateLib) -> Result<(), Error> {
+        match unsafe { ffi::vyges_abc_frame_set_lib_gen(lib.ptr) } {
+            0 => Ok(()),
+            _ => Err(failed("Abc_FrameSetLibGen")),
+        }
+    }
+
+    /// `Extra_UtilGetoptReset`.
+    pub fn getopt_reset(&mut self) {
+        unsafe { ffi::vyges_abc_getopt_reset() };
+    }
+}
+
+/// Standard output (C and Rust) sent to `/dev/null` while held; restored on drop.
+pub struct Quiet {
+    saved: i32,
+}
+
+impl Quiet {
+    pub fn new() -> Quiet {
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+        Quiet { saved: unsafe { ffi::vyges_abc_stdout_suppress() } }
+    }
+}
+
+impl Default for Quiet {
+    fn default() -> Quiet {
+        Quiet::new()
+    }
+}
+
+impl Drop for Quiet {
+    fn drop(&mut self) {
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+        unsafe { ffi::vyges_abc_stdout_restore(self.saved) };
     }
 }
