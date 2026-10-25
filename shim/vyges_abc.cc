@@ -1080,3 +1080,97 @@ void vyges_abc_stdout_restore(int saved) {
     close(saved);
   }
 }
+
+void* vyges_abc_gia_start(int n_objs, const char* name) {
+  try {
+    abc::Gia_Man_t* g = abc::Gia_ManStart(n_objs);
+    g->pName = abc::Abc_UtilStrsav(const_cast<char*>(name));
+    abc::Gia_ManHashAlloc(g);
+    return g;
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+int vyges_abc_gia_append_ci(void* gia) {
+  return abc::Gia_ManAppendCi(gia_of(gia));
+}
+
+int vyges_abc_gia_hash_and(void* gia, int lit0, int lit1) {
+  return abc::Gia_ManHashAnd(gia_of(gia), lit0, lit1);
+}
+
+int vyges_abc_gia_append_co(void* gia, int lit) {
+  return abc::Gia_ManAppendCo(gia_of(gia), lit);
+}
+
+void* vyges_abc_gia_cleanup(void* gia) {
+  try {
+    abc::Gia_Man_t* next = abc::Gia_ManCleanup(gia_of(gia));
+    abc::Gia_ManStop(gia_of(gia));
+    return next;
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+int vyges_abc_gia_count(void* gia, int which) {
+  abc::Gia_Man_t* g = gia_of(gia);
+  switch (which) {
+    case 0:
+      return abc::Gia_ManObjNum(g);
+    case 1:
+      return abc::Gia_ManAndNum(g);
+    case 2:
+      return abc::Gia_ManCiNum(g);
+    case 3:
+      return abc::Gia_ManCoNum(g);
+    default:
+      return -1;
+  }
+}
+
+int vyges_abc_gia_ci_id(void* gia, int i) {
+  abc::Gia_Man_t* g = gia_of(gia);
+  return i < 0 || i >= abc::Gia_ManCiNum(g) ? -1 : abc::Gia_ObjId(g, abc::Gia_ManCi(g, i));
+}
+
+int vyges_abc_gia_co_id(void* gia, int i) {
+  abc::Gia_Man_t* g = gia_of(gia);
+  return i < 0 || i >= abc::Gia_ManCoNum(g) ? -1 : abc::Gia_ObjId(g, abc::Gia_ManCo(g, i));
+}
+
+int vyges_abc_gia_obj(void* gia, int id, int* f0, int* c0, int* f1, int* c1) {
+  abc::Gia_Man_t* g = gia_of(gia);
+  if (id < 0 || id >= abc::Gia_ManObjNum(g)) {
+    return -1;
+  }
+  abc::Gia_Obj_t* o = abc::Gia_ManObj(g, id);
+  if (abc::Gia_ObjIsConst0(o)) {
+    return 0;
+  }
+  if (abc::Gia_ObjIsCi(o)) {
+    return 1;
+  }
+  if (abc::Gia_ObjIsCo(o)) {
+    *f0 = abc::Gia_ObjFaninId0p(g, o);
+    *c0 = abc::Gia_ObjFaninC0(o);
+    return 2;
+  }
+  if (abc::Gia_ObjIsAnd(o)) {
+    *f0 = abc::Gia_ObjFaninId0p(g, o);
+    *c0 = abc::Gia_ObjFaninC0(o);
+    *f1 = abc::Gia_ObjFaninId1p(g, o);
+    *c1 = abc::Gia_ObjFaninC1(o);
+    return 3;
+  }
+  return -1;
+}
+
+void vyges_abc_frame_update_gia(void* gia) {
+  abc::Abc_FrameUpdateGia(abc::Abc_FrameGetGlobalFrame(), gia_of(gia));
+}
+
+void* vyges_abc_frame_get_gia(void) {
+  return abc::Abc_FrameGetGia(abc::Abc_FrameGetGlobalFrame());
+}

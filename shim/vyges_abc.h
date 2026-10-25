@@ -233,6 +233,29 @@ int vyges_abc_scl_resize(void* lib, void* ntk, int upsize, int iters, int iter_n
 // Abc_FrameSetLibGen alone; a network's pManFunc set to a gate library.
 int vyges_abc_frame_set_lib_gen(void* mio);
 void vyges_abc_ntk_set_man_func(void* ntk, void* mio);
+// ---- GIA built a node at a time, read back an object at a time, and the frame's GIA ------------
+
+// Gia_ManStart(n_objs) named `name`, its structural hash table allocated (Gia_ManHashAlloc).
+void* vyges_abc_gia_start(int n_objs, const char* name);
+// Gia_ManAppendCi / Gia_ManHashAnd / Gia_ManAppendCo: the new literal.
+int vyges_abc_gia_append_ci(void* gia);
+int vyges_abc_gia_hash_and(void* gia, int lit0, int lit1);
+int vyges_abc_gia_append_co(void* gia, int lit);
+// Gia_ManCleanup: the new manager; `gia` is freed.
+void* vyges_abc_gia_cleanup(void* gia);
+// 0 objects (nObjs), 1 Gia_ManAndNum, 2 Gia_ManCiNum, 3 Gia_ManCoNum; -1 otherwise.
+int vyges_abc_gia_count(void* gia, int which);
+// The object id of the i-th CI / CO, or -1.
+int vyges_abc_gia_ci_id(void* gia, int i);
+int vyges_abc_gia_co_id(void* gia, int i);
+// Object `id`: 0 the constant, 1 a CI, 2 a CO (its fanin in f0/c0), 3 an AND (Gia_ObjIsAnd: both
+// fanins, by object id and complement); -1 out of range.
+int vyges_abc_gia_obj(void* gia, int id, int* f0, int* c0, int* f1, int* c1);
+// Abc_FrameUpdateGia: the frame takes `gia`. Abc_FrameGetGia: the frame's, now the caller's (NULL
+// when it has none).
+void vyges_abc_frame_update_gia(void* gia);
+void* vyges_abc_frame_get_gia(void);
+
 // stdout to /dev/null (flushed first): the saved descriptor to restore, or -1.
 int vyges_abc_stdout_suppress(void);
 void vyges_abc_stdout_restore(int saved);

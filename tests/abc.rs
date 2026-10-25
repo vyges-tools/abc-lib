@@ -201,3 +201,37 @@ fn bmc3_frame_bound_excludes_frame_f() {
     assert_eq!(abc.prob_status(), ProbStatus::Sat);
     assert_eq!(abc.cex().map(|c| (c.po, c.frame)), Some((1, 2)));
 }
+
+/// A manager built by hand: CIs and structurally hashed ANDs (the same AND twice is one node, an
+/// AND with a constant or with its own complement folds), COs; cleaned up, handed to the frame,
+/// run through a command and taken back, its objects read in id order.
+#[test]
+fn a_hand_built_gia_round_trips_through_the_frame() {
+    use vyges_abc_lib::{Gia, GiaObj};
+    let mut abc = Abc::start().unwrap();
+    let mut g = Gia::start(&abc, 16, "syn").unwrap();
+    let a = g.append_ci();
+    let b = g.append_ci();
+    let ab = g.hash_and(a, b);
+    assert_eq!(g.hash_and(b, a), ab, "hashed");
+    assert_eq!(g.hash_and(a, 0), 0, "AND with constant 0");
+    assert_eq!(g.hash_and(a, a ^ 1), 0, "AND with its complement");
+    let _dangling = g.hash_and(a ^ 1, b);
+    g.append_co(ab ^ 1);
+    g.append_co(a);
+    g.cleanup().unwrap();
+    assert_eq!((g.ci_count(), g.co_count(), g.and_count()), (2, 2, 1), "the dangling AND is gone");
+    abc.set_gia(g);
+    abc.execute("&st").unwrap();
+    let g = abc.take_gia().expect("the frame's GIA");
+    assert!(abc.take_gia().is_none(), "taken");
+    assert_eq!(g.object(0), Some(GiaObj::Const0));
+    let (ci0, ci1) = (g.ci_id(0).unwrap(), g.ci_id(1).unwrap());
+    assert_eq!(g.object(ci0), Some(GiaObj::Ci));
+    let and_id = (0..g.object_count()).find(|&i| matches!(g.object(i), Some(GiaObj::And(..)))).unwrap();
+    assert_eq!(g.object(and_id), Some(GiaObj::And(ci0, false, ci1, false)));
+    assert_eq!(g.object(g.co_id(0).unwrap()), Some(GiaObj::Co(and_id, true)));
+    assert_eq!(g.object(g.co_id(1).unwrap()), Some(GiaObj::Co(ci0, false)));
+    assert_eq!(g.co_id(2), None);
+    assert_eq!(g.object(g.object_count()), None);
+}

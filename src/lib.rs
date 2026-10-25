@@ -101,6 +101,17 @@ mod ffi {
         pub fn vyges_abc_ntk_set_man_func(ntk: *mut c_void, mio: *mut c_void);
         pub fn vyges_abc_stdout_suppress() -> i32;
         pub fn vyges_abc_stdout_restore(saved: i32);
+        pub fn vyges_abc_gia_start(n_objs: i32, name: *const c_char) -> *mut c_void;
+        pub fn vyges_abc_gia_append_ci(gia: *mut c_void) -> i32;
+        pub fn vyges_abc_gia_hash_and(gia: *mut c_void, lit0: i32, lit1: i32) -> i32;
+        pub fn vyges_abc_gia_append_co(gia: *mut c_void, lit: i32) -> i32;
+        pub fn vyges_abc_gia_cleanup(gia: *mut c_void) -> *mut c_void;
+        pub fn vyges_abc_gia_count(gia: *mut c_void, which: i32) -> i32;
+        pub fn vyges_abc_gia_ci_id(gia: *mut c_void, i: i32) -> i32;
+        pub fn vyges_abc_gia_co_id(gia: *mut c_void, i: i32) -> i32;
+        pub fn vyges_abc_gia_obj(gia: *mut c_void, id: i32, f0: *mut i32, c0: *mut i32, f1: *mut i32, c1: *mut i32) -> i32;
+        pub fn vyges_abc_frame_update_gia(gia: *mut c_void);
+        pub fn vyges_abc_frame_get_gia() -> *mut c_void;
     }
 }
 
@@ -954,6 +965,113 @@ impl Gia {
     /// `Gia_ManAigSynch2` over `Dch_ManSetDefaultParams` with `nBTLimit`.
     pub fn synch2(&mut self, bt_limit: i32, lut_size: i32, relax_ratio: i32) -> Result<(), Error> {
         self.replace(unsafe { ffi::vyges_abc_gia_synch2(self.ptr, bt_limit, lut_size, relax_ratio) }, "Gia_ManAigSynch2")
+    }
+}
+
+/// One object of a manager, as `Gia_ManObj` reads it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GiaObj {
+    Const0,
+    Ci,
+    /// Its fanin: object id, complemented.
+    Co(i32, bool),
+    /// Its two fanins (`Gia_ObjIsAnd`): object id, complemented.
+    And(i32, bool, i32, bool),
+}
+
+impl Gia {
+    /// `Gia_ManStart(n_objs)` named `name`, its structural hash table allocated: an empty manager
+    /// to build by hand.
+    pub fn start(_abc: &Abc, n_objs: i32, name: &str) -> Result<Gia, Error> {
+        let c = CString::new(name).map_err(|_| Error::Nul(name.to_string()))?;
+        let ptr = unsafe { ffi::vyges_abc_gia_start(n_objs, c.as_ptr() as *const c_char) };
+        if ptr.is_null() {
+            return Err(failed("Gia_ManStart"));
+        }
+        Ok(Gia { ptr })
+    }
+
+    /// `Gia_ManAppendCi`: the new CI's literal.
+    pub fn append_ci(&mut self) -> i32 {
+        unsafe { ffi::vyges_abc_gia_append_ci(self.ptr) }
+    }
+
+    /// `Gia_ManHashAnd`: the AND of two literals, structurally hashed.
+    pub fn hash_and(&mut self, lit0: i32, lit1: i32) -> i32 {
+        unsafe { ffi::vyges_abc_gia_hash_and(self.ptr, lit0, lit1) }
+    }
+
+    /// `Gia_ManAppendCo`: the new CO's literal.
+    pub fn append_co(&mut self, lit: i32) -> i32 {
+        unsafe { ffi::vyges_abc_gia_append_co(self.ptr, lit) }
+    }
+
+    /// `Gia_ManCleanup`: the manager without its dangling nodes (a new one; this one freed).
+    pub fn cleanup(&mut self) -> Result<(), Error> {
+        let next = unsafe { ffi::vyges_abc_gia_cleanup(self.ptr) };
+        if next.is_null() {
+            return Err(failed("Gia_ManCleanup"));
+        }
+        self.ptr = next;
+        Ok(())
+    }
+
+    /// Objects (`nObjs`), the constant and every CI, CO and AND among them.
+    pub fn object_count(&self) -> i32 {
+        unsafe { ffi::vyges_abc_gia_count(self.ptr, 0) }
+    }
+
+    /// `Gia_ManAndNum`.
+    pub fn and_count(&self) -> i32 {
+        unsafe { ffi::vyges_abc_gia_count(self.ptr, 1) }
+    }
+
+    /// `Gia_ManCiNum`.
+    pub fn ci_count(&self) -> i32 {
+        unsafe { ffi::vyges_abc_gia_count(self.ptr, 2) }
+    }
+
+    /// `Gia_ManCoNum`.
+    pub fn co_count(&self) -> i32 {
+        unsafe { ffi::vyges_abc_gia_count(self.ptr, 3) }
+    }
+
+    /// The object id of the `i`-th CI.
+    pub fn ci_id(&self, i: i32) -> Option<i32> {
+        let id = unsafe { ffi::vyges_abc_gia_ci_id(self.ptr, i) };
+        (id >= 0).then_some(id)
+    }
+
+    /// The object id of the `i`-th CO.
+    pub fn co_id(&self, i: i32) -> Option<i32> {
+        let id = unsafe { ffi::vyges_abc_gia_co_id(self.ptr, i) };
+        (id >= 0).then_some(id)
+    }
+
+    /// Object `id`.
+    pub fn object(&self, id: i32) -> Option<GiaObj> {
+        let (mut f0, mut c0, mut f1, mut c1) = (0, 0, 0, 0);
+        match unsafe { ffi::vyges_abc_gia_obj(self.ptr, id, &mut f0, &mut c0, &mut f1, &mut c1) } {
+            0 => Some(GiaObj::Const0),
+            1 => Some(GiaObj::Ci),
+            2 => Some(GiaObj::Co(f0, c0 != 0)),
+            3 => Some(GiaObj::And(f0, c0 != 0, f1, c1 != 0)),
+            _ => None,
+        }
+    }
+}
+
+impl Abc {
+    /// `Abc_FrameUpdateGia`: the frame's current manager becomes `gia`.
+    pub fn set_gia(&mut self, gia: Gia) {
+        unsafe { ffi::vyges_abc_frame_update_gia(gia.ptr) };
+        std::mem::forget(gia);
+    }
+
+    /// `Abc_FrameGetGia`: the frame's current manager, taken from it.
+    pub fn take_gia(&mut self) -> Option<Gia> {
+        let ptr = unsafe { ffi::vyges_abc_frame_get_gia() };
+        (!ptr.is_null()).then_some(Gia { ptr })
     }
 }
 
