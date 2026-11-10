@@ -1,7 +1,5 @@
 # vyges-abc-lib
 
-**[Download Loom](https://vyges.com/products/vyges-cli/#install)** · install the free [Vyges CLI](https://vyges.com/products/vyges-cli/), then `vyges install loom`
-
 [ABC](https://github.com/berkeley-abc/abc), UC Berkeley's system for logic synthesis and
 verification, built with **Bazel** at a pinned version into one static archive (`libvyges_abc.a`),
 behind a small C shim and a safe Rust API.
