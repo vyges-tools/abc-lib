@@ -40,7 +40,8 @@ only. Use `iprove` on a multi-output miter, which names the first output it disp
 - **No readline** (`--@abc//:use_readline=false`): nothing GPL is linked, and nothing here reads a
   terminal.
 - the **hermetic LLVM** toolchain (Bazel module `llvm`), so the compiler is not the host's;
-- `-c opt -O3 -ffp-contract=off` (`.bazelrc`): no fused multiply-add, so each floating-point
+- `-c opt -O3 -ffp-contract=off`, macOS minimum 15.0 (`build-config/common.bazelrc`, the shared
+  vyges-tools/build-config settings, imported by `.bazelrc`): no fused multiply-add, so each floating-point
   operation rounds as IEEE 754 says, however the optimiser inlines.
 
 `abc-pin.yaml` records the set. Bump on purpose, never to "latest". A build that registers a patch
